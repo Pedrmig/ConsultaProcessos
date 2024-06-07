@@ -99,6 +99,7 @@ def consulta_tribunal (numero_processo):
     }
 
     chavepublica = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
+    numero_Processo: "01001379420235010045"
 
     payload = json.dumps({
         "query": {
