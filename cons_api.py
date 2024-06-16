@@ -1,9 +1,9 @@
 from flask import Flask, render_template, request
-import requests
 import json
+import requests
+import pandas as pd
 
-def consulta_tribunal (numero_processo):
-
+def consulta_tribunal(numero_processo):
     tribunais = {
         "Tribunal Superior do Trabalho": "https://api-publica.datajud.cnj.jus.br/api_publica_tst/_search",
         "Tribunal Superior Eleitoral": "https://api-publica.datajud.cnj.jus.br/api_publica_tse/_search",
@@ -99,12 +99,11 @@ def consulta_tribunal (numero_processo):
     }
 
     chavepublica = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=='
-    numero_Processo: "01001379420235010045"
 
     payload = json.dumps({
         "query": {
             "match": {
-                "numeroProcesso": (numero_processo)
+                "numeroProcesso": numero_processo
             }
         }
     })
@@ -119,13 +118,65 @@ def consulta_tribunal (numero_processo):
         response = requests.request("POST", url, headers=headers, data=payload)
 
         if response.status_code == 200:
+            response.encoding = 'utf-8'  # Certifica-se de que a resposta é tratada como UTF-8
             data = response.json()
-            total_hits = data.get('hits', {}).get('total', {}).get('value', 0)  # Corrigindo aqui
-            print(f'entrou no tribunal {tribunal}')
+            total_hits = data.get('hits', {}).get('total', {}).get('value', 0)
 
             if total_hits > 0:
                 print(f"Dados encontrados no tribunal: {tribunal}")
-                print(json.dumps(data, indent=4))
-                break
+                return data
         else:
             print(f"Não foi possível acessar o tribunal: {tribunal}")
+
+
+def flatten_json(y, parent_key='', sep='.'):
+    items = []
+    for k, v in y.items():
+        new_key = f'{parent_key}{sep}{k}' if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_json(v, new_key, sep=sep).items())
+        elif isinstance(v, list):
+            for i, item in enumerate(v):
+                if isinstance(item, dict):
+                    items.extend(flatten_json(item, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, item))
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+def expand_list(base_record, key, sub_list):
+    expanded_records = []
+    for item in sub_list:
+        flat_item = flatten_json(item, key)
+        combined_record = {**base_record, **flat_item}
+        expanded_records.append(combined_record)
+    return expanded_records
+
+
+def json_to_dataframe(data):
+    hits = data['hits']['hits']
+    all_records = []
+
+    for hit in hits:
+        source = hit['_source']
+        base_record = flatten_json({k: v for k, v in source.items() if not isinstance(v, list)})
+
+        list_keys = [k for k, v in source.items() if isinstance(v, list)]
+
+        expanded_records = [base_record]
+        for key in list_keys:
+            new_expanded_records = []
+            for record in expanded_records:
+                sub_list = source[key]
+                if sub_list:
+                    new_expanded_records.extend(expand_list(record, key, sub_list))
+                else:
+                    new_expanded_records.append(record)
+            expanded_records = new_expanded_records
+
+        all_records.extend(expanded_records)
+
+    df = pd.DataFrame(all_records)
+    return df
